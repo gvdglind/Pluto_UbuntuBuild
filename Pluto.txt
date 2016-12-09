@@ -54,7 +54,7 @@ sudo make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- modules_install INSTALL_MO
 5) INIT THE OTG
 ---------------
 
-sudo cp -a /home/gerard/pluto/etc/* /media/gerard/rootfs/etc
+sudo cp -a pluto/etc/* /media/gerard/rootfs/etc
 cd /media/gerard/rootfs/etc/systemd/system/getty.target.wants
 sudo ln -s /lib/systemd/system/getty@.service getty@ttyGS0.service
 cd /media/gerard/rootfs/lib/systemd/system 
