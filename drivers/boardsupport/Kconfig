@@ -1,0 +1,29 @@
+config KP_IO
+tristate "kp_io: controlling Pluto io"
+depends on ARM
+default y if ARM
+help
+  kp_io module
+
+
+config USER_PROXY
+tristate "userProxy, addon for Pluto" 
+depends on ARM
+default y if ARM
+help
+  userProxy module.
+
+config ORION_CORE
+tristate "orion_core: usb ucam connector" 
+depends on ARM
+default y if ARM
+help
+  orion_core module.
+
+config SOLAR
+tristate "solar: solar i2c test" 
+depends on ARM
+default y if ARM
+help
+  solar module.
+  

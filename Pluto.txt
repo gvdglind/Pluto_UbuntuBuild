@@ -1,0 +1,333 @@
+0) IF BUILDING ON PLUTO PLATFORM
+--------------------------------
+
+To build on target (pluto) first add two packets there :
+   sudo apt install lzop
+   sudo apt-get install u-boot-tools
+
+However mostly we can skip 0) as easier to build on the PC
+
+
+
+1) ADJUSTMENTS ON THE DEFAULT UBUNTU BUILD
+------------------------------------------
+
+- mkdir build
+- cd build
+- git clone /home/gerard/git/linux-2.6-imx
+
+
+
+2) BUILDING PROCESS
+-------------------
+
+cd build/linux-2.6-imx
+make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- mrproper
+make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- imx_v7_var_ubuntu_defconfig > buildlog.txt
+make -j6 LOADADDR=0x10008000 ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- uImage >> buildlog.txt
+make -j6 LOADADDR=0x10008000 ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- modules >> buildlog.txt
+make -j6 ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- dtbs >> buildlog.txt
+
+
+
+3) COPY IMAGE AND DEVICE TREE TO BOT-VARSOM
+-------------------------------------------
+ 
+On my machine 'gerard' it's like :
+ 
+sudo cp arch/arm/boot/uImage /media/gerard/BOT-VARSOM/
+sudo cp arch/arm/boot/dts/*var*.dtb /media/gerard/BOT-VARSOM/
+
+
+4)
+Install the root files system (linaro-alip-20151215-v3.tar.bz2 obtained from Variscite) :
+-----------------------------------------------------------------------------------------
+
+sudo tar xvf /home/gerard/Progs/linaro/linaro-alip-20151215-v3.tar.bz2 -C /media/gerard/rootfs
+
+And deploy the kernel modules :
+
+sudo make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- modules_install INSTALL_MOD_PATH=/media/gerard/rootfs/
+
+
+
+5) INIT THE OTG
+---------------
+
+sudo cp -a /home/gerard/pluto/etc/* /media/gerard/rootfs/etc
+cd /media/gerard/rootfs/etc/systemd/system/getty.target.wants
+sudo ln -s /lib/systemd/system/getty@.service getty@ttyGS0.service
+cd /media/gerard/rootfs/lib/systemd/system 
+sudo ln -s serial-getty@.service getty@ttyGS0.service
+
+
+
+6) READY, UNMOUNT THE FLASH
+--------------------------- 
+
+cd
+sudo umount /media/gerard/rootfs
+sudo umount /media/gerard/BOT-VARSOM
+
+
+Needed packets on targets :
+
+sudo apt-get install gawk wget git-core diffstat unzip texinfo gcc-multilib build-essential chrpath socat libsdl1.2-dev xterm libncurses5-dev
+sudo apt install lzop
+sudo apt-get install u-boot-tools
+sudo apt-get install libusb-dev (orion)
+
+
+
+
+=====================================================================================
+Voeg orion_sio toe, zet LP5521 kernel module, zet driverOTG als console en GPIO setup
+=====================================================================================
+
+
+
+In linux-2.6-imx/drivers/usb/serial :
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+- Makefile: na 'option regel' de extra regel: 
+  obj-$(CONFIG_USB_SERIAL_ORION_SIO) += orion_sio.o
+
+- Kconfig: na 'NAVMAN regels' de extra regels :  	  
+ 
+  config USB_SERIAL_ORION_SIO
+          tristate "USB Orion Serial Driver"
+          ---help---
+            Say Y here if you want to use a Orion SIO serial device.
+
+            See <http://stash.keyprocessor.com/> for more
+            information on this driver and the device.
+
+            To compile this driver as a module, choose M here: the
+            module will be called orion_sio.
+
+- In deze dir. ook toevoegen de orion_sio.[ch]
+
+
+
+In linux-2.6-imx/arch/arm/configs/imx_v7_var_ubuntu_defconfig :
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- Na CONFIG_USB_SERIAL_FTDI_SIO=m de extra regel :
+  CONFIG_USB_SERIAL_ORION_SIO=m
+
+- En CONFIG_LEDS_LP5521 uitcomm. nu erin :
+  CONFIG_LEDS_LP5521=y
+
+- CONFIG_SENSORS_ADS1015=y
+
+- CONFIG_KP_IO=y
+- CONFIG_USER_PROXY=y
+- CONFIG_ORION_CORE=y
+- CONFIG_SOLAR=y
+
+Zodat na:
+  "make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- imx_v7_var_ubuntu_defconfig" 
+De settings in .config staan
+
+Nu kan alles gecompileerd worden.
+
+
+
+In linux-2.6-imx/arch/arm/boot/dts/imx6qdl-var-som.dtsi :
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+In &i2c3 de DS1307 RTC module eruit.
+
+In &i2c1 erbij :
+ 
+        /* DS1307 RTC module : GvdG, moved from i2c3 to here */
+        rtc-ds1307@0x68 {
+           compatible = "dallas,ds1307";
+           reg = <0x68>;
+        };
+
+
+        /* 'Solar' driver : GvdG, added
+         */
+ 
+        solar@58 {
+           compatible = "solar_dev";
+           reg = <0x58>;
+        };
+
+
+        /* LP5521 RGB led driver : GvdG, added */
+        statusleds-lp5521@32 {
+           compatible = "ti,lp5521";
+           reg = <0x32>;
+           label = "lp5521";
+           clock-mode = /bits/ 8 <2>;
+
+           chan0 {
+             led-cur = /bits/ 8 <0x2f>;
+             max-cur = /bits/ 8 <0x5f>;
+           };
+
+           chan1 {
+              led-cur = /bits/ 8 <0x2f>;
+              max-cur = /bits/ 8 <0x5f>;
+           };
+
+           chan2 {
+             led-cur = /bits/ 8 <0x2f>;
+             max-cur = /bits/ 8 <0x5f>;
+           };
+        };
+        /* details: http://lkml.iu.edu/hypermail/linux/kernel/1305.1/00430.html */
+
+        
+        /* ADS1015 ADC : GvdG, added */
+        ads1015@48 {
+	   compatible = "ti,ads1015";
+	   reg = <0x48>;
+	   #address-cells = <1>;
+	   #size-cells = <0>;
+
+	   channel@4 {
+	      reg = <4>;
+	      ti,gain = <0>;
+	      ti,datarate = <4>;
+           };
+
+           channel@5 {
+	      reg = <5>;
+	      ti,gain = <0>;
+	      ti,datarate = <4>;
+           };
+
+           channel@6 {
+	      reg = <6>;
+	      ti,gain = <0>;
+	      ti,datarate = <4>;
+           };
+
+           channel@7 {
+	      reg = <7>;
+	      ti,gain = <0>;
+	      ti,datarate = <4>;
+           };
+        };
+
+OTG poort als console, verander : 
+934
+ #ifdef VAR_SOM_SOLO_VSC
+ 	dr_mode = "otg" ;	/* Use "host" if you would like to use the USB0 type A connector */
+ #else
+   dr_mode = "otg" ; <== WAS "host"
+
+
+
+kp_io.c in de kernel meebouwen : 
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- Zie ref. http://stackoverflow.com/questions/11710022/adding-new-driver-code-to-linux-source-code
+
+- In /drivers een extra dir aangemaakt : boardsupport
+
+- In deze dir : kp_io.c en twee extra files :
+  - Makefile : 
+    obj-$(CONFIG_KP_IO) += kp_io.o 
+  - Kconfig :
+    config KP_IO
+    tristate "kp_io, controlling Pluto io" 
+    depends on ARM
+    default y if ARM
+    help
+      kp_io module.
+- In de Makefile in /drivers onderaan erbij :
+  obj-$(CONFIG_KP_IO)   += boardsupport/
+
+- In Kconfig onderaan erbij :
+  source "drivers/boardsupport/Kconfig"
+
+- In linux-2.6-imx/arch/arm/configs/imx_v7_var_ubuntu_defconfig :
+  CONFIG_KP_IO=y
+  
+
+
+userProxy.c in de kernel meebouwen : 
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- In /drivers/boardsupport
+
+- In deze dir : userProxy.c en
+  - Makefile : 
+    obj-$(CONFIG_USER_PROXY) += userProxy.o 
+  - Kconfig :
+    config USER_PROXY
+    tristate "userProxy, add on for Pluto" 
+    depends on ARM
+    default y if ARM
+    help
+      userProxy module.
+
+- In de Makefile in /drivers onderaan erbij :
+  obj-$(CONFIG_USER_PROXY)   += boardsupport/
+
+- In linux-2.6-imx/arch/arm/configs/imx_v7_var_ubuntu_defconfig :
+  CONFIG_USER_PROXY=y
+
+
+
+orion_core.c in de kernel meebouwen : 
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- In /drivers/boardsupport
+
+- In deze dir : orion_core.c en
+  - Makefile : 
+    obj-$(CONFIG_ORION_CORE) += orion_core.o 
+  - Kconfig :
+    config ORION_CORE
+    tristate "orion_core: usb ucam connector" 
+    depends on ARM
+    default y if ARM
+    help
+       orion_core module.
+
+- In de Makefile in /drivers onderaan erbij :
+  obj-$(CONFIG_ORION_CORE)   += boardsupport/
+
+- In linux-2.6-imx/arch/arm/configs/imx_v7_var_ubuntu_defconfig :
+  CONFIG_ORION_CORE=y
+
+
+
+solar_dev.c in de kernel meebouwen : 
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- In /drivers/boardsupport
+
+- In deze dir : solar_dev.c en
+  - Makefile : 
+    obj-$(CONFIG_SOLAR) += solar_dev.o 
+  - Kconfig :
+    config SOLAR
+    tristate "solar: solar i2c test" 
+    depends on ARM
+    default y if ARM
+    help
+      solar module.
+
+- In de Makefile in /drivers onderaan erbij :
+  obj-$(CONFIG_SOLAR) += boardsupport/
+
+- In linux-2.6-imx/arch/arm/configs/imx_v7_var_ubuntu_defconfig :
+  CONFIG_SOLAR=y
+
+
+
+Zet gewenste GPIO directions :
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+In /etc/rc.local erbij na : # By default this script does nothing.
+sh /usr/sbin/setgpio.sh    
+
+
+
